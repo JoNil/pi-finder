@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 struct State {
     search_text: String,
+    has_new_text: bool,
 }
 
 fn main() {
@@ -16,6 +17,7 @@ fn main() {
 
     let state = Rc::new(RefCell::new(State {
         search_text: String::new(),
+        has_new_text: false,
     }));
 
     let mut vbox = VerticalBox::new(&ui);
@@ -34,7 +36,9 @@ fn main() {
     entry.on_changed(&ui, {
         let state = state.clone();
         move |val| {
-            state.borrow_mut().search_text = val;
+            let mut state = state.borrow_mut();
+            state.search_text = val;
+            state.has_new_text = true;
         }
     });
 
@@ -43,8 +47,11 @@ fn main() {
         let ui = ui.clone();
         let mut text_label = text_label.clone();
         move || {
-            let state = state.borrow();
-            text_label.set_text(&ui, &format!("{}\n{}", state.search_text, state.search_text));
+            let mut state = state.borrow_mut();
+            if state.has_new_text {
+                text_label.set_text(&ui, &format!("{}\n{}", state.search_text, state.search_text));
+                state.has_new_text = false;
+            }
         }
     });
     event_loop.run(&ui);
