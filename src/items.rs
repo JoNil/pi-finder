@@ -1,14 +1,16 @@
 use std::{
     collections::HashSet,
     env,
-    fs::{self, DirEntry},
-    path::Path,
+    fs::{self},
+    path::{Path, PathBuf},
 };
 
-fn walk_dir(dir: impl AsRef<Path>) -> impl Iterator<Item = DirEntry> {
-    fs::read_dir(dir.as_ref())
-        .into_iter()
-        .flat_map(|i| i.filter_map(|e| e.ok()).filter(|p| !p.path().is_dir()))
+fn walk_dir(dir: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> {
+    fs::read_dir(dir.as_ref()).into_iter().flat_map(|i| {
+        i.filter_map(|e| e.ok())
+            .filter(|p| !p.path().is_dir())
+            .map(|p| p.path())
+    })
 }
 
 struct MatcherOutput {
@@ -59,9 +61,7 @@ pub fn get_matching(search_term: &str) -> Vec<String> {
 
     for dir in dirs_to_search {
         for entry in walk_dir(&dir) {
-            let path = entry.path();
-
-            if let Some(file_name) = path.file_stem().map(|s| s.to_string_lossy()) {
+            if let Some(file_name) = entry.file_name().map(|s| s.to_string_lossy()) {
                 if file_name == search_term {
                     res.primary.push(format(&file_name, &dir));
                 } else if file_name.contains(search_term) {

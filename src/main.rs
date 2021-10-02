@@ -1,5 +1,5 @@
 extern crate iui;
-use iui::controls::{Entry, Label, VerticalBox};
+use iui::controls::{Area, AreaHandler, AreaKeyEvent, Entry, Label, VerticalBox};
 use iui::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -8,7 +8,42 @@ mod items;
 
 struct State {
     search_text: String,
-    has_new_text: bool,
+    search_text_changed: bool,
+    selected_change: bool,
+    selected: i32,
+    last_res: Vec<String>,
+}
+
+struct Handler {
+    state: Rc<RefCell<State>>,
+}
+impl AreaHandler for Handler {
+    fn key_event(&mut self, _area: &Area, area_key_event: &AreaKeyEvent) -> bool {
+        let mut res = false;
+        let mut state = self.state.borrow_mut();
+
+        if state.last_res.len() == 0 {
+            return false;
+        }
+
+        if area_key_event.up && area_key_event.ext_key == 9 && state.selected == 0 {
+            state.selected = 1;
+            state.selected_change = true;
+        } else if !area_key_event.up {
+            if area_key_event.ext_key == 9 && state.selected < (state.last_res.len() as i32) - 1 {
+                state.selected += 1;
+                state.selected_change = true;
+            } else if area_key_event.ext_key == 8 && state.selected > 0 {
+                state.selected -= 1;
+                state.selected_change = true;
+                if state.selected > 0 {
+                    res = true;
+                }
+            }
+        }
+
+        res
+    }
 }
 
 fn main() {
@@ -16,7 +51,10 @@ fn main() {
 
     let state = Rc::new(RefCell::new(State {
         search_text: String::new(),
-        has_new_text: false,
+        search_text_changed: false,
+        selected: 0,
+        selected_change: false,
+        last_res: Vec::new(),
     }));
 
     let mut vbox = VerticalBox::new(&ui);
@@ -24,6 +62,14 @@ fn main() {
 
     let mut entry = Entry::new(&ui);
     vbox.append(&ui, entry.clone(), LayoutStrategy::Compact);
+
+    let area = Area::new(
+        &ui,
+        Box::new(Handler {
+            state: state.clone(),
+        }),
+    );
+    vbox.append(&ui, area.clone(), LayoutStrategy::Compact);
 
     let text_label = Label::new(&ui, "");
     vbox.append(&ui, text_label.clone(), LayoutStrategy::Compact);
@@ -37,7 +83,7 @@ fn main() {
         move |val| {
             let mut state = state.borrow_mut();
             state.search_text = val;
-            state.has_new_text = true;
+            state.search_text_changed = true;
         }
     });
 
@@ -47,17 +93,32 @@ fn main() {
         let mut text_label = text_label.clone();
         move || {
             let mut state = state.borrow_mut();
-            if state.has_new_text {
-                if state.search_text.len() > 0 {
-                    let items = items::get_matching(&state.search_text);
-                    let items = items.join("\n");
+            if state.search_text_changed {
+                state.search_text_changed = false;
+                state.selected = 0;
 
-                    text_label.set_text(&ui, &items);
-                    state.has_new_text = false;
+                if state.search_text.len() > 0 {
+                    state.last_res = items::get_matching(&state.search_text);
                 } else {
-                    text_label.set_text(&ui, "");
-                    state.has_new_text = false;
+                    state.last_res = Vec::new();
                 }
+
+                state.selected_change = true;
+            }
+
+            if state.selected_change {
+                state.selected_change = false;
+
+                let mut items_string = String::new();
+                for (i, item) in state.last_res.iter().enumerate() {
+                    if i == state.selected as usize {
+                        items_string.push_str(&format!("*{}\n", item));
+                    } else {
+                        items_string.push_str(&format!("{}\n", item));
+                    }
+                }
+
+                text_label.set_text(&ui, &items_string);
             }
         }
     });
