@@ -49,7 +49,7 @@ pub fn get_matching(search_term: &str) -> Vec<String> {
 
     if let Ok(path) = env::var("PATH") {
         let mut unique_dirs = HashSet::new();
-        for entry in dbg!(path).split(":") {
+        for entry in path.split(":") {
             if !unique_dirs.contains(&entry) {
                 unique_dirs.insert(entry);
                 dirs_to_search.push(Path::new(entry).to_owned());
@@ -57,7 +57,7 @@ pub fn get_matching(search_term: &str) -> Vec<String> {
         }
     }
 
-    for dir in dbg!(dirs_to_search) {
+    for dir in dirs_to_search {
         for entry in walk_dir(&dir) {
             let path = entry.path();
 
