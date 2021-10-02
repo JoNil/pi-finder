@@ -1,11 +1,10 @@
 extern crate iui;
-use iui::controls::{
-    Entry, Group, HorizontalBox, HorizontalSeparator, Label, MultilineEntry, PasswordEntry,
-    ProgressBar, Slider, Spacer, Spinbox, VerticalBox,
-};
+use iui::controls::{Entry, Label, VerticalBox};
 use iui::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
+
+mod items;
 
 struct State {
     search_text: String,
@@ -49,7 +48,10 @@ fn main() {
         move || {
             let mut state = state.borrow_mut();
             if state.has_new_text {
-                text_label.set_text(&ui, &format!("{}\n{}", state.search_text, state.search_text));
+                let items = items::get_matching(&state.search_text);
+                let items = items.join("\n");
+
+                text_label.set_text(&ui, &items);
                 state.has_new_text = false;
             }
         }
