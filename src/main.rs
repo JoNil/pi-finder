@@ -48,11 +48,16 @@ fn main() {
         move || {
             let mut state = state.borrow_mut();
             if state.has_new_text {
-                let items = items::get_matching(&state.search_text);
-                let items = items.join("\n");
+                if state.search_text.len() > 0 {
+                    let items = items::get_matching(&state.search_text);
+                    let items = items.join("\n");
 
-                text_label.set_text(&ui, &items);
-                state.has_new_text = false;
+                    text_label.set_text(&ui, &items);
+                    state.has_new_text = false;
+                } else {
+                    text_label.set_text(&ui, "");
+                    state.has_new_text = false;
+                }
             }
         }
     });

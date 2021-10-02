@@ -1,35 +1,15 @@
 use std::{
+    collections::HashSet,
     env,
     fs::{self, DirEntry},
-    ops::ControlFlow,
     path::Path,
 };
 
-fn walk_dir(
-    dir: impl AsRef<Path>,
-    callback: &mut dyn FnMut(&DirEntry) -> ControlFlow<()>,
-) -> ControlFlow<()> {
-    if let Ok(read_dir) = fs::read_dir(dir.as_ref()) {
-        for entry in read_dir {
-            if let Ok(entry) = entry {
-                let path = entry.path();
-                match if path.is_dir() {
-                    walk_dir(&path, callback)
-                } else {
-                    callback(&entry)
-                } {
-                    ControlFlow::Break(_) => {
-                        return ControlFlow::Break(());
-                    }
-                    ControlFlow::Continue(_) => {
-                        continue;
-                    }
-                }
-            }
-        }
-    }
-
-    ControlFlow::Continue(())
+fn walk_dir(dir: impl AsRef<Path>) -> impl Iterator<Item = DirEntry> {
+    fs::read_dir(dir.as_ref())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|p| !p.path().is_dir())
 }
 
 pub fn get_matching(search_term: &str) -> Vec<String> {
@@ -44,29 +24,33 @@ pub fn get_matching(search_term: &str) -> Vec<String> {
     }
 
     if let Ok(path) = env::var("PATH") {
-        for entry in path.split(":") {
-            dirs_to_search.push(Path::new(entry).to_owned());
+        let mut unique_dirs = HashSet::new();
+        for entry in dbg!(path).split(":") {
+            if !unique_dirs.contains(&entry) {
+                unique_dirs.insert(entry);
+                dirs_to_search.push(Path::new(entry).to_owned());
+            }
         }
     }
 
-    for dir in dirs_to_search {
-        if let ControlFlow::Break(()) = walk_dir(dir, &mut |entry| {
+    for dir in dbg!(dirs_to_search) {
+        for entry in walk_dir(&dir) {
             let path = entry.path();
             let path_string = path.to_string_lossy();
 
             if path_string.contains(search_term) {
                 if let Some(file_name) = path.file_name() {
-                    res.push(file_name.to_string_lossy().to_string());
+                    res.push(format!(
+                        "{} ({})",
+                        file_name.to_string_lossy(),
+                        dir.to_string_lossy()
+                    ));
 
                     if res.len() > 25 {
-                        return ControlFlow::Break(());
+                        return res;
                     }
                 }
             }
-
-            ControlFlow::Continue(())
-        }) {
-            break;
         }
     }
 
