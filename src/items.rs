@@ -7,13 +7,37 @@ use std::{
 
 fn walk_dir(dir: impl AsRef<Path>) -> impl Iterator<Item = DirEntry> {
     fs::read_dir(dir.as_ref())
-        .unwrap()
-        .filter_map(|e| e.ok())
-        .filter(|p| !p.path().is_dir())
+        .into_iter()
+        .flat_map(|i| i.filter_map(|e| e.ok()).filter(|p| !p.path().is_dir()))
+}
+
+struct MatcherOutput {
+    primary: Vec<String>,
+    secondary: Vec<String>,
+}
+
+impl MatcherOutput {
+    fn output(mut self) -> Vec<String> {
+        self.primary.sort_by(|a, b| a.len().cmp(&b.len()));
+        self.secondary.sort_by(|a, b| a.len().cmp(&b.len()));
+
+        self.primary
+            .into_iter()
+            .chain(self.secondary.into_iter())
+            .take(25)
+            .collect()
+    }
+}
+
+fn format(file_name: &str, dir: &Path) -> String {
+    format!("{} ({})", file_name, dir.to_string_lossy())
 }
 
 pub fn get_matching(search_term: &str) -> Vec<String> {
-    let mut res = Vec::new();
+    let mut res = MatcherOutput {
+        primary: Vec::new(),
+        secondary: Vec::new(),
+    };
 
     let mut dirs_to_search = Vec::new();
     dirs_to_search.push(Path::new("/usr/share/applications").to_owned());
@@ -36,23 +60,16 @@ pub fn get_matching(search_term: &str) -> Vec<String> {
     for dir in dbg!(dirs_to_search) {
         for entry in walk_dir(&dir) {
             let path = entry.path();
-            let path_string = path.to_string_lossy();
 
-            if path_string.contains(search_term) {
-                if let Some(file_name) = path.file_name() {
-                    res.push(format!(
-                        "{} ({})",
-                        file_name.to_string_lossy(),
-                        dir.to_string_lossy()
-                    ));
-
-                    if res.len() > 25 {
-                        return res;
-                    }
+            if let Some(file_name) = path.file_stem().map(|s| s.to_string_lossy()) {
+                if file_name == search_term {
+                    res.primary.push(format(&file_name, &dir));
+                } else if file_name.contains(search_term) {
+                    res.secondary.push(format(&file_name, &dir));
                 }
             }
         }
     }
 
-    res
+    return res.output();
 }
