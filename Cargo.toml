@@ -6,4 +6,4 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-iui = { git = "https://github.com/JoNil/libui-rs.git" }
+gtk = { git = "https://github.com/gtk-rs/gtk3-rs.git" }

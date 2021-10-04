@@ -1,126 +1,115 @@
-extern crate iui;
-use iui::controls::{Area, AreaHandler, AreaKeyEvent, Entry, Label, VerticalBox};
-use iui::prelude::*;
+use gtk::{
+    self, gio,
+    prelude::{
+        ApplicationExt, ApplicationExtManual, BoxExt, ContainerExt, EntryExt, GtkWindowExt,
+        LabelExt, WidgetExt,
+    },
+};
 use std::cell::RefCell;
-use std::rc::Rc;
 
 mod items;
 
 struct State {
-    search_text: String,
-    search_text_changed: bool,
     selected_change: bool,
     selected: i32,
     last_res: Vec<String>,
+    label: gtk::Label,
 }
 
-struct Handler {
-    state: Rc<RefCell<State>>,
-}
-impl AreaHandler for Handler {
-    fn key_event(&mut self, _area: &Area, area_key_event: &AreaKeyEvent) -> bool {
-        let mut res = false;
-        let mut state = self.state.borrow_mut();
+/*fn key_event(&mut self, _area: &Area, area_key_event: &AreaKeyEvent) -> bool {
+    let mut res = false;
+    let mut state = self.state.borrow_mut();
 
-        if state.last_res.len() == 0 {
-            return false;
-        }
+    if state.last_res.len() == 0 {
+        return false;
+    }
 
-        if area_key_event.up && area_key_event.ext_key == 9 && state.selected == 0 {
-            state.selected = 1;
+    if area_key_event.up && area_key_event.ext_key == 9 && state.selected == 0 {
+        state.selected = 1;
+        state.selected_change = true;
+    } else if !area_key_event.up {
+        if area_key_event.ext_key == 9 && state.selected < (state.last_res.len() as i32) - 1 {
+            state.selected += 1;
             state.selected_change = true;
-        } else if !area_key_event.up {
-            if area_key_event.ext_key == 9 && state.selected < (state.last_res.len() as i32) - 1 {
-                state.selected += 1;
-                state.selected_change = true;
-            } else if area_key_event.ext_key == 8 && state.selected > 0 {
-                state.selected -= 1;
-                state.selected_change = true;
-                if state.selected > 0 {
-                    res = true;
-                }
+        } else if area_key_event.ext_key == 8 && state.selected > 0 {
+            state.selected -= 1;
+            state.selected_change = true;
+            if state.selected > 0 {
+                res = true;
             }
         }
-
-        res
     }
+
+    res
+}*/
+
+thread_local!(
+    static STATE: RefCell<Option<State>> = RefCell::new(None)
+);
+
+fn build_ui(application: &gtk::Application) {
+    let entry = gtk::Entry::new();
+    let label = gtk::Label::new(Some("HELLO"));
+
+    STATE.with(|global| {
+        *global.borrow_mut() = Some(State {
+            selected: 0,
+            selected_change: false,
+            last_res: Vec::new(),
+            label: label.clone(),
+        });
+    });
+
+    let window = gtk::ApplicationWindow::new(application);
+    window.set_title("pi-finder");
+    window.set_border_width(10);
+    window.set_position(gtk::WindowPosition::Center);
+    window.set_default_size(260, 40);
+
+    entry.connect_text_notify(|e| {
+        let text = e.text();
+
+        STATE.with(|global| {
+            let mut state = global.borrow_mut();
+            let state = state.as_mut().unwrap();
+
+            state.selected = 0;
+
+            if text.len() > 0 {
+                state.last_res = items::get_matching(&text);
+            } else {
+                state.last_res = Vec::new();
+            }
+
+            let mut items_string = String::new();
+            for (i, item) in state.last_res.iter().enumerate() {
+                if i == state.selected as usize {
+                    items_string.push_str(&format!("*{}\n", item));
+                } else {
+                    items_string.push_str(&format!("{}\n", item));
+                }
+            }
+
+            state.label.set_text(&items_string);
+        });
+    });
+
+    let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    vbox.set_spacing(6);
+    vbox.pack_start(&entry, true, true, 6);
+    vbox.pack_start(&label, true, true, 6);
+    window.add(&vbox);
+    window.show_all();
 }
 
 fn main() {
-    let ui = UI::init().unwrap();
-
-    let state = Rc::new(RefCell::new(State {
-        search_text: String::new(),
-        search_text_changed: false,
-        selected: 0,
-        selected_change: false,
-        last_res: Vec::new(),
-    }));
-
-    let mut vbox = VerticalBox::new(&ui);
-    vbox.set_padded(&ui, true);
-
-    let mut entry = Entry::new(&ui);
-    vbox.append(&ui, entry.clone(), LayoutStrategy::Compact);
-
-    let area = Area::new(
-        &ui,
-        Box::new(Handler {
-            state: state.clone(),
-        }),
+    let application = gtk::Application::new(
+        Some("jonathan.pi-finder"),
+        gio::ApplicationFlags::NON_UNIQUE,
     );
-    vbox.append(&ui, area.clone(), LayoutStrategy::Compact);
 
-    let text_label = Label::new(&ui, "");
-    vbox.append(&ui, text_label.clone(), LayoutStrategy::Compact);
+    application.connect_startup(build_ui);
+    application.connect_activate(|_| {});
 
-    let mut window = Window::new(&ui, "Pi Finder", 300, 150, WindowType::NoMenubar);
-    window.set_child(&ui, vbox);
-    window.show(&ui);
-
-    entry.on_changed(&ui, {
-        let state = state.clone();
-        move |val| {
-            let mut state = state.borrow_mut();
-            state.search_text = val;
-            state.search_text_changed = true;
-        }
-    });
-
-    let mut event_loop = ui.event_loop();
-    event_loop.on_tick(&ui, {
-        let ui = ui.clone();
-        let mut text_label = text_label.clone();
-        move || {
-            let mut state = state.borrow_mut();
-            if state.search_text_changed {
-                state.search_text_changed = false;
-                state.selected = 0;
-
-                if state.search_text.len() > 0 {
-                    state.last_res = items::get_matching(&state.search_text);
-                } else {
-                    state.last_res = Vec::new();
-                }
-
-                state.selected_change = true;
-            }
-
-            if state.selected_change {
-                state.selected_change = false;
-
-                let mut items_string = String::new();
-                for (i, item) in state.last_res.iter().enumerate() {
-                    if i == state.selected as usize {
-                        items_string.push_str(&format!("*{}\n", item));
-                    } else {
-                        items_string.push_str(&format!("{}\n", item));
-                    }
-                }
-
-                text_label.set_text(&ui, &items_string);
-            }
-        }
-    });
-    event_loop.run(&ui);
+    application.run();
 }
