@@ -1,9 +1,36 @@
 use std::{
     collections::HashSet,
-    env,
+    env, fmt,
     fs::{self},
     path::{Path, PathBuf},
+    process::Command,
 };
+
+pub(crate) struct Item {
+    filename: String,
+    dir: PathBuf,
+}
+
+impl Item {
+    fn new(filename: String, dir: PathBuf) -> Self {
+        Self { filename, dir }
+    }
+
+    pub(crate) fn execute(&self) {
+        Command::new("x-terminal-emulator")
+            .arg("-e")
+            .arg(format!("{}", self.filename))
+            .arg("$SHELL")
+            .spawn()
+            .ok();
+    }
+}
+
+impl fmt::Display for Item {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} ({})", self.filename, self.dir.to_string_lossy())
+    }
+}
 
 fn walk_dir(dir: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> {
     fs::read_dir(dir.as_ref()).into_iter().flat_map(|i| {
@@ -14,14 +41,16 @@ fn walk_dir(dir: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> {
 }
 
 struct MatcherOutput {
-    primary: Vec<String>,
-    secondary: Vec<String>,
+    primary: Vec<Item>,
+    secondary: Vec<Item>,
 }
 
 impl MatcherOutput {
-    fn output(mut self) -> Vec<String> {
-        self.primary.sort_by(|a, b| a.len().cmp(&b.len()));
-        self.secondary.sort_by(|a, b| a.len().cmp(&b.len()));
+    fn output(mut self) -> Vec<Item> {
+        self.primary
+            .sort_by(|a, b| a.filename.len().cmp(&b.filename.len()));
+        self.secondary
+            .sort_by(|a, b| a.filename.len().cmp(&b.filename.len()));
 
         self.primary
             .into_iter()
@@ -31,11 +60,7 @@ impl MatcherOutput {
     }
 }
 
-fn format(file_name: &str, dir: &Path) -> String {
-    format!("{} ({})", file_name, dir.to_string_lossy())
-}
-
-pub fn get_matching(search_term: &str) -> Vec<String> {
+pub(crate) fn get_matching(search_term: &str) -> Vec<Item> {
     let mut res = MatcherOutput {
         primary: Vec::new(),
         secondary: Vec::new(),
@@ -63,9 +88,11 @@ pub fn get_matching(search_term: &str) -> Vec<String> {
         for entry in walk_dir(&dir) {
             if let Some(file_name) = entry.file_name().map(|s| s.to_string_lossy()) {
                 if file_name == search_term {
-                    res.primary.push(format(&file_name, &dir));
+                    res.primary
+                        .push(Item::new(file_name.into_owned(), dir.clone()));
                 } else if file_name.contains(search_term) {
-                    res.secondary.push(format(&file_name, &dir));
+                    res.secondary
+                        .push(Item::new(file_name.into_owned(), dir.clone()));
                 }
             }
         }

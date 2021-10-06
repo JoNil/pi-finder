@@ -1,10 +1,14 @@
 use gtk::{
-    self, gio,
+    self,
+    gdk::EventMask,
+    gio,
     prelude::{
         ApplicationExt, ApplicationExtManual, BoxExt, ContainerExt, EntryExt, GtkWindowExt,
-        LabelExt, WidgetExt,
+        LabelExt, WidgetExt, WidgetExtManual,
     },
+    Inhibit,
 };
+use items::Item;
 use std::cell::RefCell;
 
 mod items;
@@ -12,8 +16,9 @@ mod items;
 struct State {
     selected_change: bool,
     selected: i32,
-    last_res: Vec<String>,
+    last_res: Vec<Item>,
     label: gtk::Label,
+    armed: bool,
 }
 
 /*fn key_event(&mut self, _area: &Area, area_key_event: &AreaKeyEvent) -> bool {
@@ -49,7 +54,7 @@ thread_local!(
 
 fn build_ui(application: &gtk::Application) {
     let entry = gtk::Entry::new();
-    let label = gtk::Label::new(Some("HELLO"));
+    let label = gtk::Label::new(Some(""));
 
     STATE.with(|global| {
         *global.borrow_mut() = Some(State {
@@ -57,6 +62,7 @@ fn build_ui(application: &gtk::Application) {
             selected_change: false,
             last_res: Vec::new(),
             label: label.clone(),
+            armed: true,
         });
     });
 
@@ -65,6 +71,40 @@ fn build_ui(application: &gtk::Application) {
     window.set_border_width(10);
     window.set_position(gtk::WindowPosition::Center);
     window.set_default_size(260, 40);
+
+    WidgetExtManual::add_events(
+        &window,
+        EventMask::KEY_PRESS_MASK | EventMask::KEY_RELEASE_MASK,
+    );
+
+    window.connect_key_press_event(|_, event| -> Inhibit {
+        STATE.with(|global| {
+            let mut state = global.borrow_mut();
+            let state = state.as_mut().unwrap();
+            if state.armed {
+                if let Some(36) = event.keycode() {
+                    state.armed = false;
+                    if let Some(item) = state.last_res.first() {
+                        item.execute();
+                    }
+                }
+            }
+        });
+
+        Inhibit(false)
+    });
+
+    window.connect_key_release_event(|_, event| -> Inhibit {
+        STATE.with(|global| {
+            let mut state = global.borrow_mut();
+            let state = state.as_mut().unwrap();
+            if let Some(36) = event.keycode() {
+                state.armed = true;
+            }
+        });
+
+        Inhibit(false)
+    });
 
     entry.connect_text_notify(|e| {
         let text = e.text();
@@ -98,6 +138,7 @@ fn build_ui(application: &gtk::Application) {
     vbox.set_spacing(6);
     vbox.pack_start(&entry, true, true, 6);
     vbox.pack_start(&label, true, true, 6);
+
     window.add(&vbox);
     window.show_all();
 }
