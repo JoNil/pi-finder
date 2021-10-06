@@ -14,6 +14,7 @@ use std::cell::RefCell;
 mod items;
 
 struct State {
+    application: gtk::Application,
     selected_change: bool,
     selected: i32,
     last_res: Vec<Item>,
@@ -58,6 +59,7 @@ fn build_ui(application: &gtk::Application) {
 
     STATE.with(|global| {
         *global.borrow_mut() = Some(State {
+            application: application.clone(),
             selected: 0,
             selected_change: false,
             last_res: Vec::new(),
@@ -86,6 +88,7 @@ fn build_ui(application: &gtk::Application) {
                     state.armed = false;
                     if let Some(item) = state.last_res.first() {
                         item.execute();
+                        state.application.quit();
                     }
                 }
             }
