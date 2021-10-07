@@ -9,45 +9,37 @@ use gtk::{
     Inhibit,
 };
 use items::Item;
-use std::cell::RefCell;
+use std::{
+    cell::RefCell,
+    cmp::{max, min},
+};
 
 mod items;
 
 struct State {
     application: gtk::Application,
-    selected_change: bool,
-    selected: i32,
-    last_res: Vec<Item>,
+    window: gtk::ApplicationWindow,
     label: gtk::Label,
-    armed: bool,
+    last_res: Vec<Item>,
+    selected: i32,
 }
 
-/*fn key_event(&mut self, _area: &Area, area_key_event: &AreaKeyEvent) -> bool {
-    let mut res = false;
-    let mut state = self.state.borrow_mut();
+impl State {
+    fn update_label_text(&mut self) {
+        self.selected = self.selected.clamp(0, self.last_res.len() as i32);
 
-    if state.last_res.len() == 0 {
-        return false;
-    }
-
-    if area_key_event.up && area_key_event.ext_key == 9 && state.selected == 0 {
-        state.selected = 1;
-        state.selected_change = true;
-    } else if !area_key_event.up {
-        if area_key_event.ext_key == 9 && state.selected < (state.last_res.len() as i32) - 1 {
-            state.selected += 1;
-            state.selected_change = true;
-        } else if area_key_event.ext_key == 8 && state.selected > 0 {
-            state.selected -= 1;
-            state.selected_change = true;
-            if state.selected > 0 {
-                res = true;
+        let mut items_string = String::new();
+        for (i, item) in self.last_res.iter().enumerate() {
+            if i == self.selected as usize {
+                items_string.push_str(&format!("*{}\n", item));
+            } else {
+                items_string.push_str(&format!("{}\n", item));
             }
         }
-    }
 
-    res
-}*/
+        self.label.set_text(&items_string);
+    }
+}
 
 thread_local!(
     static STATE: RefCell<Option<State>> = RefCell::new(None)
@@ -56,17 +48,7 @@ thread_local!(
 fn build_ui(application: &gtk::Application) {
     let entry = gtk::Entry::new();
     let label = gtk::Label::new(Some(""));
-
-    STATE.with(|global| {
-        *global.borrow_mut() = Some(State {
-            application: application.clone(),
-            selected: 0,
-            selected_change: false,
-            last_res: Vec::new(),
-            label: label.clone(),
-            armed: true,
-        });
-    });
+    label.set_xalign(0.0);
 
     let window = gtk::ApplicationWindow::new(application);
     window.set_title("pi-finder");
@@ -79,30 +61,36 @@ fn build_ui(application: &gtk::Application) {
         EventMask::KEY_PRESS_MASK | EventMask::KEY_RELEASE_MASK,
     );
 
+    STATE.with(|global| {
+        *global.borrow_mut() = Some(State {
+            application: application.clone(),
+            window: window.clone(),
+            label: label.clone(),
+            last_res: Vec::new(),
+            selected: 0,
+        });
+    });
+
     window.connect_key_press_event(|_, event| -> Inhibit {
         STATE.with(|global| {
             let mut state = global.borrow_mut();
             let state = state.as_mut().unwrap();
-            if state.armed {
-                if let Some(36) = event.keycode() {
-                    state.armed = false;
-                    if let Some(item) = state.last_res.first() {
+            match event.keycode() {
+                Some(36) => {
+                    if let Some(item) = state.last_res.get(state.selected as usize) {
                         item.execute();
                         state.application.quit();
                     }
                 }
-            }
-        });
-
-        Inhibit(false)
-    });
-
-    window.connect_key_release_event(|_, event| -> Inhibit {
-        STATE.with(|global| {
-            let mut state = global.borrow_mut();
-            let state = state.as_mut().unwrap();
-            if let Some(36) = event.keycode() {
-                state.armed = true;
+                Some(111) => {
+                    state.selected = max(state.selected - 1, 0);
+                    state.update_label_text();
+                }
+                Some(116) => {
+                    state.selected = min(state.selected + 1, state.last_res.len() as i32);
+                    state.update_label_text();
+                }
+                _ => (),
             }
         });
 
@@ -116,7 +104,7 @@ fn build_ui(application: &gtk::Application) {
             let mut state = global.borrow_mut();
             let state = state.as_mut().unwrap();
 
-            state.selected = 0;
+            state.window.resize(260, 1);
 
             if text.len() > 0 {
                 state.last_res = items::get_matching(&text);
@@ -124,23 +112,14 @@ fn build_ui(application: &gtk::Application) {
                 state.last_res = Vec::new();
             }
 
-            let mut items_string = String::new();
-            for (i, item) in state.last_res.iter().enumerate() {
-                if i == state.selected as usize {
-                    items_string.push_str(&format!("*{}\n", item));
-                } else {
-                    items_string.push_str(&format!("{}\n", item));
-                }
-            }
-
-            state.label.set_text(&items_string);
+            state.update_label_text();
         });
     });
 
     let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
     vbox.set_spacing(6);
-    vbox.pack_start(&entry, true, true, 6);
-    vbox.pack_start(&label, true, true, 6);
+    vbox.pack_start(&entry, false, true, 6);
+    vbox.pack_start(&label, false, true, 6);
 
     window.add(&vbox);
     window.show_all();
@@ -154,6 +133,5 @@ fn main() {
 
     application.connect_startup(build_ui);
     application.connect_activate(|_| {});
-
     application.run();
 }
