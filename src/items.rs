@@ -19,7 +19,7 @@ impl Item {
     pub(crate) fn execute(&self) {
         Command::new("x-terminal-emulator")
             .arg("-e")
-            .arg(format!("{}; \\$SHELL", self.filename))
+            .arg(format!("{}; $SHELL", self.filename))
             .spawn()
             .ok();
     }
