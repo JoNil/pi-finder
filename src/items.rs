@@ -7,6 +7,8 @@ use std::{
     process::Command,
 };
 
+use freedesktop_entry_parser::parse_entry;
+
 pub(crate) struct Item {
     filename: String,
     dir: PathBuf,
@@ -18,11 +20,46 @@ impl Item {
     }
 
     pub(crate) fn execute(&self) {
-        Command::new("x-terminal-emulator")
-            .arg("-e")
-            .arg(format!("{}; $SHELL", self.filename))
-            .spawn()
-            .ok();
+        if self.is_desktop() {
+            let path = self.dir.join(&self.filename);
+
+            println!("{}", fs::read_to_string(&path).unwrap());
+
+            if let Ok(desktop) = parse_entry(path) {
+                let section = desktop.section("Desktop Entry");
+                let terminal = section
+                    .attr("Terminal")
+                    .map(|t| t == "true")
+                    .unwrap_or(false);
+
+                if let Some(exec) = section.attr("Exec") {
+                    if terminal {
+                        Command::new("x-terminal-emulator")
+                            .arg("-e")
+                            .arg(format!("{}; $SHELL", exec))
+                            .spawn()
+                            .ok();
+                    } else {
+                        let exec = exec
+                            .split(" ")
+                            .filter(|s| *s != "%F" && *s != "%f")
+                            .collect::<Vec<_>>();
+
+                        if exec.len() == 1 {
+                            Command::new(exec[0]).spawn().ok();
+                        } else {
+                            Command::new(exec[0]).args(&exec[1..]).spawn().ok();
+                        }
+                    }
+                }
+            }
+        } else {
+            Command::new("x-terminal-emulator")
+                .arg("-e")
+                .arg(format!("{}; $SHELL", self.filename))
+                .spawn()
+                .ok();
+        }
     }
 
     pub(crate) fn is_desktop(&self) -> bool {
@@ -36,7 +73,22 @@ impl Item {
 
 impl fmt::Display for Item {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} ({})", self.filename, self.dir.to_string_lossy())
+        if self.is_desktop() {
+            let path = self.dir.join(&self.filename);
+            let entry = parse_entry(path);
+
+            if let Some(name) = entry.ok().and_then(|e| {
+                e.section("Desktop Entry")
+                    .attr("Name")
+                    .map(|s| s.to_owned())
+            }) {
+                write!(f, "{} ({})", name, self.dir.to_string_lossy())
+            } else {
+                write!(f, "{} ({})", self.filename, self.dir.to_string_lossy())
+            }
+        } else {
+            write!(f, "{} ({})", self.filename, self.dir.to_string_lossy())
+        }
     }
 }
 
