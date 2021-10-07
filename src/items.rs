@@ -1,3 +1,4 @@
+use freedesktop_entry_parser::parse_entry;
 use std::{
     cmp::Ordering,
     collections::HashSet,
@@ -6,8 +7,6 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
-
-use freedesktop_entry_parser::parse_entry;
 
 fn spawn_in_terminal(name: &str) {
     Command::new("x-terminal-emulator")
@@ -136,49 +135,40 @@ fn walk_dir(dir: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> {
     })
 }
 
-struct MatcherOutput<'a> {
-    items: Vec<Item>,
-    search_term: &'a str,
+pub(crate) fn filter<'a>(items: &'a [Item], search_term: &str) -> Vec<&'a Item> {
+    let mut items = items
+        .iter()
+        .filter(|i| i.name().contains(search_term) || i.short_name().contains(search_term))
+        .collect::<Vec<_>>();
+
+    items.sort_by(|a, b| {
+        let name_a = a.name();
+        let name_b = b.name();
+
+        let short_a = a.short_name();
+        let short_b = b.short_name();
+
+        match (
+            name_a == search_term || short_a == search_term,
+            name_b == search_term || short_b == search_term,
+            a.is_desktop(),
+            b.is_desktop(),
+            name_a,
+            name_b,
+        ) {
+            (true, false, ..) => Ordering::Less,
+            (false, true, ..) => Ordering::Greater,
+            (_, _, true, false, ..) => Ordering::Less,
+            (_, _, false, true, ..) => Ordering::Greater,
+            (_, _, _, _, a, b) => a.len().cmp(&b.len()),
+        }
+    });
+
+    items.into_iter().take(25).collect()
 }
 
-impl<'a> MatcherOutput<'a> {
-    fn output(self) -> Vec<Item> {
-        let Self {
-            mut items,
-            search_term,
-        } = self;
-        items.sort_by(|a, b| {
-            let name_a = a.name();
-            let name_b = b.name();
-
-            let short_a = a.short_name();
-            let short_b = b.short_name();
-
-            match (
-                name_a == search_term || short_a == search_term,
-                name_b == search_term || short_b == search_term,
-                a.is_desktop(),
-                b.is_desktop(),
-                name_a,
-                name_b,
-            ) {
-                (true, false, ..) => Ordering::Less,
-                (false, true, ..) => Ordering::Greater,
-                (_, _, true, false, ..) => Ordering::Less,
-                (_, _, false, true, ..) => Ordering::Greater,
-                (_, _, _, _, a, b) => a.len().cmp(&b.len()),
-            }
-        });
-
-        items.into_iter().take(25).collect()
-    }
-}
-
-pub(crate) fn get_matching(search_term: &str) -> Vec<Item> {
-    let mut res = MatcherOutput {
-        items: Vec::new(),
-        search_term,
-    };
+pub(crate) fn get() -> Vec<Item> {
+    let mut res = Vec::new();
 
     let mut dirs_to_search = Vec::new();
     dirs_to_search.push(Path::new("/usr/share/applications").to_owned());
@@ -201,14 +191,12 @@ pub(crate) fn get_matching(search_term: &str) -> Vec<Item> {
     for dir in dirs_to_search {
         for entry in walk_dir(&dir) {
             if let Some(file_name) = entry.file_name().map(|s| s.to_string_lossy()) {
-                if file_name.trim_end_matches(".desktop").contains(search_term) {
-                    if let Some(item) = Item::new(file_name.into_owned(), dir.clone()) {
-                        res.items.push(item);
-                    }
+                if let Some(item) = Item::new(file_name.into_owned(), dir.clone()) {
+                    res.push(item);
                 }
             }
         }
     }
 
-    return res.output();
+    res
 }

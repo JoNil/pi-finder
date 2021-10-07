@@ -9,18 +9,22 @@ use gtk::{
     Inhibit,
 };
 use items::Item;
+use once_cell::sync::Lazy;
 use std::{
     cell::RefCell,
     cmp::{max, min},
+    thread,
 };
 
 mod items;
+
+static ITEMS: Lazy<Vec<Item>> = Lazy::new(|| items::get());
 
 struct State {
     application: gtk::Application,
     window: gtk::ApplicationWindow,
     label: gtk::Label,
-    last_res: Vec<Item>,
+    last_res: Vec<&'static Item>,
     selected: i32,
 }
 
@@ -107,7 +111,7 @@ fn build_ui(application: &gtk::Application) {
             state.window.resize(260, 1);
 
             if text.len() > 0 {
-                state.last_res = items::get_matching(&text);
+                state.last_res = items::filter(&ITEMS, &text);
             } else {
                 state.last_res = Vec::new();
             }
@@ -126,6 +130,10 @@ fn build_ui(application: &gtk::Application) {
 }
 
 fn main() {
+    thread::spawn(|| {
+        Lazy::force(&ITEMS);
+    });
+
     let application = gtk::Application::new(
         Some("jonathan.pi-finder"),
         gio::ApplicationFlags::NON_UNIQUE,
