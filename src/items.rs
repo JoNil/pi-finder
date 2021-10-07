@@ -9,85 +9,121 @@ use std::{
 
 use freedesktop_entry_parser::parse_entry;
 
-pub(crate) struct Item {
-    filename: String,
-    dir: PathBuf,
+fn spawn_in_terminal(name: &str) {
+    Command::new("x-terminal-emulator")
+        .arg("-e")
+        .arg(format!("{}; $SHELL", name))
+        .spawn()
+        .ok();
+}
+
+pub(crate) enum Item {
+    Desktop {
+        name: String,
+        filename: String,
+        terminal: bool,
+        exec: String,
+        args: Vec<String>,
+        dir: PathBuf,
+    },
+    Path {
+        name: String,
+        dir: PathBuf,
+    },
 }
 
 impl Item {
-    fn new(filename: String, dir: PathBuf) -> Self {
-        Self { filename, dir }
+    fn new(filename: String, dir: PathBuf) -> Option<Self> {
+        if filename.ends_with(".desktop") {
+            let path = dir.join(&filename);
+
+            let entry = parse_entry(path).ok()?;
+
+            let section = entry.section("Desktop Entry");
+
+            let name = section.attr("Name")?.to_string();
+
+            let filename = filename.trim_end_matches(".desktop").to_owned();
+
+            let terminal = section
+                .attr("Terminal")
+                .map(|t| t == "true")
+                .unwrap_or(false);
+
+            let mut args = section
+                .attr("Exec")?
+                .split(" ")
+                .filter(|s| *s != "%F" && *s != "%f")
+                .map(|s| s.to_owned())
+                .collect::<Vec<_>>();
+
+            if args.len() == 0 {
+                return None;
+            }
+
+            let exec = args.remove(0);
+
+            Some(Self::Desktop {
+                name,
+                filename,
+                terminal,
+                exec,
+                args,
+                dir,
+            })
+        } else {
+            Some(Self::Path {
+                name: filename,
+                dir,
+            })
+        }
     }
 
     pub(crate) fn execute(&self) {
-        if self.is_desktop() {
-            let path = self.dir.join(&self.filename);
-
-            println!("{}", fs::read_to_string(&path).unwrap());
-
-            if let Ok(desktop) = parse_entry(path) {
-                let section = desktop.section("Desktop Entry");
-                let terminal = section
-                    .attr("Terminal")
-                    .map(|t| t == "true")
-                    .unwrap_or(false);
-
-                if let Some(exec) = section.attr("Exec") {
-                    if terminal {
-                        Command::new("x-terminal-emulator")
-                            .arg("-e")
-                            .arg(format!("{}; $SHELL", exec))
-                            .spawn()
-                            .ok();
-                    } else {
-                        let exec = exec
-                            .split(" ")
-                            .filter(|s| *s != "%F" && *s != "%f")
-                            .collect::<Vec<_>>();
-
-                        if exec.len() == 1 {
-                            Command::new(exec[0]).spawn().ok();
-                        } else {
-                            Command::new(exec[0]).args(&exec[1..]).spawn().ok();
-                        }
-                    }
+        match self {
+            Item::Desktop {
+                terminal,
+                exec,
+                args,
+                ..
+            } => {
+                if *terminal {
+                    spawn_in_terminal(exec);
+                } else {
+                    Command::new(exec).args(args).spawn().ok();
                 }
             }
-        } else {
-            Command::new("x-terminal-emulator")
-                .arg("-e")
-                .arg(format!("{}; $SHELL", self.filename))
-                .spawn()
-                .ok();
+            Item::Path { name, .. } => spawn_in_terminal(name),
+        }
+    }
+
+    pub(crate) fn name(&self) -> &str {
+        match self {
+            Item::Desktop { name, .. } => name,
+            Item::Path { name, .. } => name,
+        }
+    }
+
+    pub(crate) fn short_name(&self) -> &str {
+        match self {
+            Item::Desktop { filename, .. } => filename,
+            Item::Path { name, .. } => name,
         }
     }
 
     pub(crate) fn is_desktop(&self) -> bool {
-        self.filename.ends_with(".desktop")
-    }
-
-    pub(crate) fn name(&self) -> &str {
-        self.filename.trim_end_matches(".desktop")
+        match self {
+            Item::Desktop { .. } => true,
+            Item::Path { .. } => false,
+        }
     }
 }
 
 impl fmt::Display for Item {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.is_desktop() {
-            let path = self.dir.join(&self.filename);
-            let entry = parse_entry(path);
-
-            if let Some(name) = entry.ok().and_then(|e| {
-                e.section("Desktop Entry")
-                    .attr("Name")
-                    .map(|s| s.to_owned())
-            }) {
-                write!(f, "{} ({})", name, self.dir.to_string_lossy())
-            } else {
-                write!(f, "{} ({})", self.filename, self.dir.to_string_lossy())
-            }
-        } else {
-            write!(f, "{} ({})", self.filename, self.dir.to_string_lossy())
+        match self {
+            Item::Desktop { name, dir, .. } => write!(f, "{} ({})", name, dir.to_string_lossy()),
+            Item::Path { name, dir } => write!(f, "{} ({})", name, dir.to_string_lossy()),
         }
     }
 }
@@ -115,9 +151,12 @@ impl<'a> MatcherOutput<'a> {
             let name_a = a.name();
             let name_b = b.name();
 
+            let short_a = a.short_name();
+            let short_b = b.short_name();
+
             match (
-                name_a == search_term,
-                name_b == search_term,
+                name_a == search_term || short_a == search_term,
+                name_b == search_term || short_b == search_term,
                 a.is_desktop(),
                 b.is_desktop(),
                 name_a,
@@ -163,8 +202,9 @@ pub(crate) fn get_matching(search_term: &str) -> Vec<Item> {
         for entry in walk_dir(&dir) {
             if let Some(file_name) = entry.file_name().map(|s| s.to_string_lossy()) {
                 if file_name.trim_end_matches(".desktop").contains(search_term) {
-                    res.items
-                        .push(Item::new(file_name.into_owned(), dir.clone()));
+                    if let Some(item) = Item::new(file_name.into_owned(), dir.clone()) {
+                        res.items.push(item);
+                    }
                 }
             }
         }
