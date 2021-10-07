@@ -136,9 +136,13 @@ fn walk_dir(dir: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> {
 }
 
 pub(crate) fn filter<'a>(items: &'a [Item], search_term: &str) -> Vec<&'a Item> {
+    let search_term = search_term.to_lowercase();
     let mut items = items
         .iter()
-        .filter(|i| i.name().contains(search_term) || i.short_name().contains(search_term))
+        .filter(|i| {
+            i.name().to_lowercase().contains(&search_term)
+                || i.short_name().to_lowercase().contains(&search_term)
+        })
         .collect::<Vec<_>>();
 
     items.sort_by(|a, b| {
