@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     collections::HashSet,
     env, fmt,
     fs::{self},
@@ -23,6 +24,14 @@ impl Item {
             .spawn()
             .ok();
     }
+
+    pub(crate) fn is_desktop(&self) -> bool {
+        self.filename.ends_with(".desktop")
+    }
+
+    pub(crate) fn name(&self) -> &str {
+        self.filename.trim_end_matches(".desktop")
+    }
 }
 
 impl fmt::Display for Item {
@@ -39,30 +48,45 @@ fn walk_dir(dir: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> {
     })
 }
 
-struct MatcherOutput {
-    primary: Vec<Item>,
-    secondary: Vec<Item>,
+struct MatcherOutput<'a> {
+    items: Vec<Item>,
+    search_term: &'a str,
 }
 
-impl MatcherOutput {
-    fn output(mut self) -> Vec<Item> {
-        self.primary
-            .sort_by(|a, b| a.filename.len().cmp(&b.filename.len()));
-        self.secondary
-            .sort_by(|a, b| a.filename.len().cmp(&b.filename.len()));
+impl<'a> MatcherOutput<'a> {
+    fn output(self) -> Vec<Item> {
+        let Self {
+            mut items,
+            search_term,
+        } = self;
+        items.sort_by(|a, b| {
+            let name_a = a.name();
+            let name_b = b.name();
 
-        self.primary
-            .into_iter()
-            .chain(self.secondary.into_iter())
-            .take(25)
-            .collect()
+            match (
+                name_a == search_term,
+                name_b == search_term,
+                a.is_desktop(),
+                b.is_desktop(),
+                name_a,
+                name_b,
+            ) {
+                (true, false, ..) => Ordering::Less,
+                (false, true, ..) => Ordering::Greater,
+                (_, _, true, false, ..) => Ordering::Less,
+                (_, _, false, true, ..) => Ordering::Greater,
+                (_, _, _, _, a, b) => a.len().cmp(&b.len()),
+            }
+        });
+
+        items.into_iter().take(25).collect()
     }
 }
 
 pub(crate) fn get_matching(search_term: &str) -> Vec<Item> {
     let mut res = MatcherOutput {
-        primary: Vec::new(),
-        secondary: Vec::new(),
+        items: Vec::new(),
+        search_term,
     };
 
     let mut dirs_to_search = Vec::new();
@@ -86,11 +110,8 @@ pub(crate) fn get_matching(search_term: &str) -> Vec<Item> {
     for dir in dirs_to_search {
         for entry in walk_dir(&dir) {
             if let Some(file_name) = entry.file_name().map(|s| s.to_string_lossy()) {
-                if file_name == search_term {
-                    res.primary
-                        .push(Item::new(file_name.into_owned(), dir.clone()));
-                } else if file_name.contains(search_term) {
-                    res.secondary
+                if file_name.trim_end_matches(".desktop").contains(search_term) {
+                    res.items
                         .push(Item::new(file_name.into_owned(), dir.clone()));
                 }
             }
