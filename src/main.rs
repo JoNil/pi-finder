@@ -80,6 +80,7 @@ fn build_ui(application: &gtk::Application) {
             let mut state = global.borrow_mut();
             let state = state.as_mut().unwrap();
             match event.keycode() {
+                Some(9) => state.application.quit(),
                 Some(36) => {
                     if let Some(item) = state.last_res.get(state.selected as usize) {
                         item.execute();
