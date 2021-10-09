@@ -53,6 +53,7 @@ impl Item {
                 .attr("Exec")?
                 .split(" ")
                 .filter(|s| *s != "%F" && *s != "%f")
+                .filter(|s| *s != "%U" && *s != "%u")
                 .map(|s| s.to_owned())
                 .collect::<Vec<_>>();
 
