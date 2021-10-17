@@ -62,7 +62,7 @@ fn build_ui(application: &gtk::Application) {
 
     WidgetExtManual::add_events(
         &window,
-        EventMask::KEY_PRESS_MASK | EventMask::KEY_RELEASE_MASK,
+        EventMask::KEY_PRESS_MASK | EventMask::KEY_RELEASE_MASK | EventMask::FOCUS_CHANGE_MASK,
     );
 
     STATE.with(|global| {
@@ -73,6 +73,17 @@ fn build_ui(application: &gtk::Application) {
             last_res: Vec::new(),
             selected: 0,
         });
+    });
+
+    window.connect_focus_out_event(|_, e| {
+        STATE.with(|global| {
+            let mut state = global.borrow_mut();
+            let state = state.as_mut().unwrap();
+            if !e.is_in() {
+                state.application.quit();
+            }
+        });
+        Inhibit(false)
     });
 
     window.connect_key_press_event(|_, event| -> Inhibit {
@@ -136,11 +147,20 @@ fn main() {
     });
 
     let application = gtk::Application::new(
-        Some("jonathan.pi-finder"),
-        gio::ApplicationFlags::NON_UNIQUE,
+        Some("name.jonathan.pi-finder"),
+        gio::ApplicationFlags::empty(),
     );
 
     application.connect_startup(build_ui);
-    application.connect_activate(|_| {});
+    application.connect_activate(|_| {
+        STATE.with(|global| {
+            let mut state = global.borrow_mut();
+            let state = state.as_mut().unwrap();
+
+            let window = state.window.window().unwrap();
+            window.raise();
+            window.focus(0);
+        });
+    });
     application.run();
 }
