@@ -2,9 +2,10 @@ use gtk::{
     self,
     gdk::EventMask,
     gio,
+    glib::timeout_add,
     prelude::{
-        ApplicationExt, ApplicationExtManual, BoxExt, ContainerExt, EntryExt, GtkWindowExt,
-        LabelExt, WidgetExt, WidgetExtManual,
+        ApplicationExt, ApplicationExtManual, BoxExt, ContainerExt, Continue, EntryExt,
+        GtkWindowExt, LabelExt, WidgetExt, WidgetExtManual,
     },
     Inhibit,
 };
@@ -14,6 +15,7 @@ use std::{
     cell::RefCell,
     cmp::{max, min},
     thread,
+    time::Duration,
 };
 
 mod items;
@@ -24,6 +26,7 @@ struct State {
     application: gtk::Application,
     window: gtk::ApplicationWindow,
     label: gtk::Label,
+    activated: bool,
     last_res: Vec<&'static Item>,
     selected: i32,
 }
@@ -74,6 +77,7 @@ fn build_ui(application: &gtk::Application) {
             application: application.clone(),
             window: window.clone(),
             label: label.clone(),
+            activated: false,
             last_res: Vec::new(),
             selected: 0,
         });
@@ -83,8 +87,18 @@ fn build_ui(application: &gtk::Application) {
         STATE.with(|global| {
             let mut state = global.borrow_mut();
             let state = state.as_mut().unwrap();
+
+            state.window.hide();
+
             if !e.is_in() {
-                state.application.quit();
+                timeout_add(Duration::from_millis(250), || {
+                    STATE.with(|global| {
+                        let mut state = global.borrow_mut();
+                        let state = state.as_mut().unwrap();
+                        state.application.quit();
+                    });
+                    Continue(false)
+                });
             }
         });
         Inhibit(false)
@@ -146,10 +160,6 @@ fn build_ui(application: &gtk::Application) {
 }
 
 fn main() {
-    thread::spawn(|| {
-        Lazy::force(&ITEMS);
-    });
-
     let application = gtk::Application::new(
         Some("name.jonathan.pi-finder"),
         gio::ApplicationFlags::empty(),
@@ -158,12 +168,23 @@ fn main() {
     application.connect_startup(build_ui);
     application.connect_activate(|_| {
         STATE.with(|global| {
+            thread::spawn(|| {
+                Lazy::force(&ITEMS);
+            });
+
             let mut state = global.borrow_mut();
             let state = state.as_mut().unwrap();
+
+            if state.activated {
+                state.application.quit();
+                return;
+            }
 
             let window = state.window.window().unwrap();
             window.raise();
             window.focus(0);
+
+            state.activated = true;
         });
     });
     application.run();
