@@ -8,12 +8,16 @@ use std::{
     process::Command,
 };
 
-fn spawn_in_terminal(name: &str) {
-    Command::new("x-terminal-emulator")
-        .arg("-e")
-        .arg(format!("{}; $SHELL", name))
-        .spawn()
-        .ok();
+fn spawn_in_terminal(name: &str, path: Option<&str>) {
+    let mut command = Command::new("x-terminal-emulator");
+    command.arg("-e");
+    command.arg(format!("{}; $SHELL", name));
+
+    if let Some(path) = path {
+        command.current_dir(path);
+    }
+
+    command.spawn().ok();
 }
 
 pub(crate) enum Item {
@@ -23,6 +27,7 @@ pub(crate) enum Item {
         terminal: bool,
         exec: String,
         args: Vec<String>,
+        path: Option<String>,
         dir: PathBuf,
     },
     Path {
@@ -57,6 +62,8 @@ impl Item {
                 .map(|s| s.to_owned())
                 .collect::<Vec<_>>();
 
+            let path = section.attr("Path").map(|s| s.to_owned());
+
             if args.len() == 0 {
                 return None;
             }
@@ -69,6 +76,7 @@ impl Item {
                 terminal,
                 exec,
                 args,
+                path,
                 dir,
             })
         } else {
@@ -85,15 +93,23 @@ impl Item {
                 terminal,
                 exec,
                 args,
+                path,
                 ..
             } => {
                 if *terminal {
-                    spawn_in_terminal(exec);
+                    spawn_in_terminal(exec, path.as_deref());
                 } else {
-                    Command::new(exec).args(args).spawn().ok();
+                    let mut command = Command::new(exec);
+                    command.args(args);
+
+                    if let Some(path) = path {
+                        command.current_dir(path);
+                    }
+
+                    command.spawn().ok();
                 }
             }
-            Item::Path { name, .. } => spawn_in_terminal(name),
+            Item::Path { name, .. } => spawn_in_terminal(name, None),
         }
     }
 
