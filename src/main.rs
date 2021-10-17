@@ -57,8 +57,12 @@ fn build_ui(application: &gtk::Application) {
     let window = gtk::ApplicationWindow::new(application);
     window.set_title("pi-finder");
     window.set_border_width(10);
-    window.set_position(gtk::WindowPosition::Center);
+    window.set_position(gtk::WindowPosition::None);
     window.set_default_size(260, 40);
+    window.set_decorated(false);
+    window.set_skip_taskbar_hint(true);
+    window.set_keep_above(true);
+    window.move_(0, 36);
 
     WidgetExtManual::add_events(
         &window,
